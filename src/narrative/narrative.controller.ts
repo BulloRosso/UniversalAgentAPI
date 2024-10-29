@@ -28,19 +28,36 @@ export class NarrativeController {
         model: "tts-1",
         voice: "alloy",
         input: narrative,
+        response_format: "mp3",
       });
 
-      const buffer = Buffer.from(await mp3.arrayBuffer());
-
+      // Set headers for streaming
       res.set({
         'Content-Type': 'audio/mpeg',
-        'Content-Length': buffer.length,
+        'Transfer-Encoding': 'chunked',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
       });
 
-      return res.send(buffer);
+      // Convert the arrayBuffer to a Stream
+      const buffer = Buffer.from(await mp3.arrayBuffer());
+      const chunkSize = 16 * 1024; // 16KB chunks
+
+      // Stream the buffer in chunks
+      for (let i = 0; i < buffer.length; i += chunkSize) {
+        const chunk = buffer.slice(i, i + chunkSize);
+        res.write(chunk);
+      }
+
+      // End the response
+      res.end();
+
     } catch (error) {
       this.logger.error('Error generating speech:', error);
-      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: 'Error generating speech' });
+      if (!res.headersSent) {
+        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: 'Error generating speech' });
+      } else {
+        res.end();
+      }
     }
-  }
-}
+  }}
