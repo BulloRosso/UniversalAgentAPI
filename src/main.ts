@@ -21,8 +21,14 @@ async function bootstrap() {
   // CORS setup
   app.enableCors({
     origin: 'https://3ab8a01e-8805-433c-922d-ada11e3795b3-00-wkkibyqnwmao.picard.replit.dev',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['content-type'],
+    methods: ['GET', 'POST','OPTIONS'],
+    allowedHeaders: [
+      'content-type',
+      'authorization',
+      'accept',
+      'origin',
+      'x-requested-with'
+    ]
   });
 
   // Configure to listen on 0.0.0.0 for Replit

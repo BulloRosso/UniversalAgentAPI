@@ -23,6 +23,8 @@ export class NarrativeController {
       return res.status(HttpStatus.BAD_REQUEST).json({ error: 'Text of narrative is required' });
     }
 
+    this.logger.debug(`Attempting to generate narrative for: ${narrative}`);
+    
     try {
       const mp3 = await this.openai.audio.speech.create({
         model: "tts-1",
@@ -43,6 +45,8 @@ export class NarrativeController {
       const buffer = Buffer.from(await mp3.arrayBuffer());
       const chunkSize = 16 * 1024; // 16KB chunks
 
+      this.logger.debug('Streaming narrative audio');
+      
       // Stream the buffer in chunks
       for (let i = 0; i < buffer.length; i += chunkSize) {
         const chunk = buffer.slice(i, i + chunkSize);
