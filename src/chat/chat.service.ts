@@ -6,8 +6,17 @@ import { SessionGateway } from '../session/session.gateway';
 interface WebSocketFunctionArgs {
   type?: string;
   url?: string;
+  data?: any;
+  timeout?: number;
   [key: string]: any;
 }
+
+interface WebSocketResponse {
+  status: 'success' | 'error';
+  data?: any;
+  error?: string;
+}
+
 
 interface MessageContentText {
   type: 'text';
@@ -139,12 +148,23 @@ export class ChatService {
       const toolOutputs = [];
 
       for (const toolCall of toolCalls) {
-        if (toolCall.function.name.startsWith('ws_')) {
+        const functionName = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments);
+
+        if (functionName.startsWith('ui_')) {
+          // Handle UI-specific tool calls
+          await this.handleUIToolCall(threadId, functionName, args, toolCall.id);
+          toolOutputs.push({
+            tool_call_id: toolCall.id,
+            output: JSON.stringify({ status: 'ui_command_sent' })
+          });
+        } else if (functionName.startsWith('ws_')) {
+          // Handle existing websocket tool calls
           try {
             const result = await this.executeWebSocketFunction(
               threadId,
-              toolCall.function.name,
-              JSON.parse(toolCall.function.arguments),
+              functionName,
+              args,
               toolCall.id
             );
             toolOutputs.push({
@@ -154,6 +174,13 @@ export class ChatService {
           } catch (error) {
             this.logger.error(`Error executing WebSocket function: ${error.message}`);
           }
+        } else {
+          // Handle internal tool calls
+          const result = await this.handleInternalToolCalls(functionName, args);
+          toolOutputs.push({
+            tool_call_id: toolCall.id,
+            output: JSON.stringify(result)
+          });
         }
       }
 
@@ -168,31 +195,32 @@ export class ChatService {
     }
   }
 
-  private async executeWebSocketFunction(
-    threadId: string, 
-    functionName: string, 
-    args: WebSocketFunctionArgs, 
+  private async handleUIToolCall(
+    threadId: string,
+    functionName: string,
+    args: any,
     toolCallId: string
-  ): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('WebSocket function execution timeout'));
-      }, 180000);
+  ): Promise<void> {
+    this.logger.log(`Handling UI tool call: ${functionName} for thread ${threadId}`);
 
-      // Store the resolver function
-      this.sessionGateway.addPendingResponse(toolCallId, (response: any) => {
-        clearTimeout(timeout);
-        resolve(response);
-      });
+    // Verify threadId exists
+    if (!threadId) {
+      throw new BadRequestException('Thread ID is required for UI tool calls');
+    }
 
-      // Send command to client
-      this.sessionGateway.sendToClient(threadId, {
-        cmd: functionName.substring(3), // Remove 'ws_' prefix
-        type: args.type || 'command',
-        url: args.url || '',
-        tool_call_id: toolCallId
-      });
+    // Send UI-specific command to client
+    this.sessionGateway.sendToClient(threadId, {
+      cmd: functionName,
+      ...args,
+      tool_call_id: toolCallId
     });
+  }
+
+  private async handleInternalToolCalls(functionName: string, args: any): Promise<any> {
+    this.logger.log(`Handling internal tool call: ${functionName}`);
+    // Implement internal tool call handling logic here
+    // Return the result of the tool call
+    return { status: 'completed', result: 'internal_tool_executed' };
   }
 
   private clearPollingInterval(threadId: string, runId: string) {
@@ -202,4 +230,70 @@ export class ChatService {
       this.pollingIntervals.delete(key);
     }
   }
+
+  private async executeWebSocketFunction(
+    threadId: string,
+    functionName: string,
+    args: WebSocketFunctionArgs,
+    toolCallId: string
+  ): Promise<WebSocketResponse> {
+    if (!threadId) {
+      throw new BadRequestException('Thread ID is required for WebSocket functions');
+    }
+
+    return new Promise((resolve, reject) => {
+      // Set timeout (default 3 minutes or use provided timeout)
+      const timeoutDuration = args.timeout || 180000; // 3 minutes default
+      const timeout = setTimeout(() => {
+        this.sessionGateway.removePendingResponse(toolCallId);
+        reject(new Error(`WebSocket function execution timeout after ${timeoutDuration}ms`));
+      }, timeoutDuration);
+
+      try {
+        // Store the resolver function for this tool call
+        this.sessionGateway.addPendingResponse(toolCallId, (response: any) => {
+          clearTimeout(timeout);
+
+          // Validate response
+          if (!response) {
+            resolve({ status: 'error', error: 'Empty response received' });
+            return;
+          }
+
+          // Handle error responses
+          if (response.error) {
+            resolve({ status: 'error', error: response.error });
+            return;
+          }
+
+          resolve({
+            status: 'success',
+            data: response
+          });
+        });
+
+        // Prepare the command message
+        const commandMessage = {
+          cmd: functionName.replace(/^ws_/, ''), // Remove 'ws_' prefix
+          type: args.type || 'command',
+          thread_id: threadId,
+          tool_call_id: toolCallId,
+          ...args // Include any additional arguments
+        };
+
+        // Log the outgoing command
+        this.logger.debug(`Sending WebSocket command: ${JSON.stringify(commandMessage)}`);
+
+        // Send command to client
+        this.sessionGateway.sendToClient(threadId, commandMessage);
+
+      } catch (error) {
+        clearTimeout(timeout);
+        this.sessionGateway.removePendingResponse(toolCallId);
+        reject(new Error(`Failed to execute WebSocket function: ${error.message}`));
+      }
+    });
+  }
+
+  
 }

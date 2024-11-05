@@ -34,6 +34,7 @@ export class SessionGateway implements OnGatewayConnection, OnGatewayDisconnect 
   sendToClient(threadId: string, message: any) {
     const client = this.sessions.get(threadId);
     if (client?.readyState === WebSocket.OPEN) {
+      this.logger.log('Sending message to client: ' + JSON.stringify(message))
       client.send(JSON.stringify(message));
     }
   }
@@ -48,5 +49,10 @@ export class SessionGateway implements OnGatewayConnection, OnGatewayDisconnect 
       resolver(response);
       this.pendingResponses.delete(toolCallId);
     }
+  }
+
+  // Add this helper method to your SessionGateway class
+  removePendingResponse(toolCallId: string): void {
+    this.pendingResponses.delete(toolCallId);
   }
 }
