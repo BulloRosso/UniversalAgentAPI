@@ -20,7 +20,8 @@ async function bootstrap() {
   
   // CORS setup
   app.enableCors({
-    origin: 'https://3ab8a01e-8805-433c-922d-ada11e3795b3-00-wkkibyqnwmao.picard.replit.dev',
+    origin: ['https://3ab8a01e-8805-433c-922d-ada11e3795b3-00-wkkibyqnwmao.picard.replit.dev',
+             'https://ai-tutor.replit.app'],
     methods: ['GET', 'POST','OPTIONS'],
     allowedHeaders: [
       'content-type',
