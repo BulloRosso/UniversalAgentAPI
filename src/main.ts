@@ -28,6 +28,7 @@ async function bootstrap() {
       'authorization',
       'accept',
       'origin',
+      'Access-Control-Allow-Origin',
       'x-requested-with'
     ]
   });
