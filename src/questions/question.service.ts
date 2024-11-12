@@ -8,15 +8,16 @@ export class QuestionService {
 
   private readonly storageClient: Client;
   private readonly logger = new Logger(QuestionService.name);
-
+  
   constructor() {
     this.storageClient = new Client();
     this.logger.debug('QuestionService initialized');
   }
   
-  async getQuestions(lessonId: string): Promise<Question[]> {
+  async getQuestions(lessonId: string, lang: string): Promise<Question[]> {
+    
    try {
-      const key = `questions-${lessonId}.json`;
+      const key = `questions-${lessonId}-${lang}.json`;
       const { ok, value, error } = await this.storageClient.downloadAsText(key);
 
       if (!ok || error) {
@@ -24,12 +25,18 @@ export class QuestionService {
         throw new NotFoundException(`Questions for lesson with ID ${lessonId} not found`);
       }
 
-      this.logger.debug('Successfully retrieved questions from storage');
-      return JSON.parse(value) as Question[];
-    }
-  } catch (error: any) {
-    this.logger.error(`Error getting questions: ${error.message}`);
-    throw error;
-  }
+      try {
+        const questions = JSON.parse(value) as Question[];
+        this.logger.debug('Successfully retrieved questions from storage');
+        return questions;
+      } catch (parseError) {
+        this.logger.error(`Error parsing questions JSON: ${parseError.message}`);
+        throw new Error('Invalid question data format');
+      }
 
+    } catch (error) {
+      this.logger.error(`Error getting questions: ${error.message}`);
+      throw error; // Re-throw the error to be handled by the caller
+    }
+  }
 }
